@@ -1,3 +1,4 @@
+
 # perfume-bot/bot.py
 # Главный файл: запускает Telegram-бота, обрабатывает сообщения и отвечает.
 
@@ -64,10 +65,6 @@ def handle_text(msg):
 if __name__ == "__main__":
     print("Бот запущен — готов принимать сообщения.")
     try:
-        # Убираем возможный webhook и очищаем старые апдейты
-        bot.remove_webhook()
-        bot.get_updates(offset=None)
-
         # Запуск постоянного прослушивания сообщений
         bot.infinity_polling(timeout=60, long_polling_timeout=5)
     except Exception as e:
