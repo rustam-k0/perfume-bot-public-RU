@@ -38,20 +38,21 @@ perfume-bot/
 | `id`             | TEXT       | Уникальный id (Primary Key) |
 | `brand`          | TEXT       | Бренд оригинала             |
 | `name`           | TEXT       | Название оригинала          |
-| `orig_price_eur` | REAL       | Цена оригинала в евро       |
-| `orig_market_url`| TEXT       | Ссылка на страницу оригинала|
+| `price_eur`      | REAL       | Цена оригинала в евро       |
+| `url`            | TEXT       | Ссылка на страницу оригинала|
 
 ### 2. Таблица `CopyPerfume`
 Хранит информацию о копиях парфюмов, связанных с оригиналом.
 
-| Колонка          | Тип данных | Описание                                        |
-|------------------|------------|-------------------------------
+| Колонка          | Тип данных | Описание  
+|------------------|------------|-----------
 | `id`             | TEXT       |Уникальный id (Primary Key)
 | `original_id`    | TEXT       | Ссылка на `id` из таблицы `OriginalPerfume` (Foreign Key) |
 | `brand`          | TEXT       | Бренд клона                     |
 | `name`           | TEXT       | Название клона                  |
-| `dupe_price_eur` | REAL       | Цена клона в евро               |
-| `dupe_market_url`| TEXT       | Ссылка на клон                  |
+| `price_eur`      | REAL       | Цена клона в евро               |
+| `url`            | TEXT       | Ссылка на клон                  |
+| `notes`          | TEXT       | Примечания к аромату            |
 | `saved_amount`   | REAL       | Экономия в %: `(orig_price_eur - dupe_price_eur) / orig_price_eur * 100` |
 
 
