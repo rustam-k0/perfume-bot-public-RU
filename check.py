@@ -1,56 +1,49 @@
-# check.py
+# perfume-bot/check.py
+# Быстрая проверка целостности базы данных (таблицы и счётчики)
 
-import sqlite3
 import os
+import sqlite3
+from dotenv import load_dotenv
 
-# Имя файла базы данных
-DB_FILE = 'data/perfumes.db'
+load_dotenv()
+DB_PATH = os.getenv("DB_PATH", "data/perfumes.db")
 
-def check_database_integrity():
-    """
-    Проверяет существование файла БД и выводит содержимое таблиц.
-    Эта версия НЕ изменяет и НЕ удаляет ваши данные.
-    """
-    # Проверяем, существует ли файл базы данных
-    if not os.path.exists(DB_FILE):
-        print(f"❌ Ошибка: Файл базы данных не найден по пути: {DB_FILE}")
-        print("Пожалуйста, убедитесь, что база данных находится в папке data/.")
+def table_exists(conn, name):
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name = ?", (name,))
+    return cur.fetchone() is not None
+
+def main():
+    if not os.path.exists(DB_PATH):
+        print("DB не найдена:", DB_PATH)
         return
-
-    print(f"✅ Файл базы данных найден: {DB_FILE}")
-    
+    conn = sqlite3.connect(DB_PATH)
+    for t in ("OriginalPerfume", "CopyPerfume"):
+        print(f"{t}: {'OK' if table_exists(conn, t) else 'MISSING'}")
+    cur = conn.cursor()
     try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        
-        # --- Проверяем и выводим содержимое таблицы OriginalPerfume ---
-        print("\n--- 🧐 Содержимое таблицы OriginalPerfume ---")
-        cursor.execute("SELECT * FROM OriginalPerfume LIMIT 5") # LIMIT 5 чтобы не выводить тысячи строк
-        originals = cursor.fetchall()
-        
-        if not originals:
-            print("Таблица OriginalPerfume пуста.")
-        else:
-            for row in originals:
-                print(row)
-        
-        # --- Проверяем и выводим содержимое таблицы CopyPerfume ---
-        print("\n--- 🧐 Содержимое таблицы CopyPerfume ---")
-        cursor.execute("SELECT * FROM CopyPerfume LIMIT 5")
-        clones = cursor.fetchall()
+        cur.execute("SELECT COUNT(*) FROM OriginalPerfume")
+        print("Originals:", cur.fetchone()[0])
+    except Exception as e:
+        print("Originals: error", e)
+    try:
+        cur.execute("SELECT COUNT(*) FROM CopyPerfume")
+        print("Copies:", cur.fetchone()[0])
+    except Exception as e:
+        print("Copies: error", e)
 
-        if not clones:
-            print("Таблица CopyPerfume пуста.")
-        else:
-            for row in clones:
-                print(row)
-                
-        conn.close()
-        print("\n👍 Проверка завершена. Ошибок не найдено.")
+    # Примерная проверка: копии с пустым saved_amount при наличии цен
+    try:
+        cur.execute("""
+            SELECT COUNT(*) FROM CopyPerfume c
+            JOIN OriginalPerfume o ON c.original_id = o.id
+            WHERE c.saved_amount IS NULL AND c.price_eur IS NOT NULL AND o.price_eur IS NOT NULL
+        """)
+        print("Missing saved_amount but prices present:", cur.fetchone()[0])
+    except Exception:
+        pass
 
-    except sqlite3.Error as e:
-        print(f"❌ Произошла ошибка SQLite: {e}")
-
+    conn.close()
 
 if __name__ == "__main__":
-    check_database_integrity()
+    main()

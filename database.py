@@ -1,85 +1,61 @@
+# perfume-bot/database.py
+# Работа с SQLite и fuzzy-поиск оригиналов
+
 import sqlite3
+from rapidfuzz import process, fuzz
 
-DATABASE_PATH = 'data/perfumes.db'
-
-def get_db_connection():
-    """Создает и возвращает соединение с базой данных."""
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.row_factory = sqlite3.Row  # Позволяет получать строки как словари
+def get_connection(path="data/perfumes.db"):
+    """Вернуть sqlite3.Connection. check_same_thread=False для использования в многопоточном окружении бота."""
+    conn = sqlite3.connect(path, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
     return conn
 
-def get_all_original_perfumes() -> list:
-    """Извлекает все оригинальные парфюмы из базы данных."""
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM OriginalPerfume")
-        perfumes = [dict(row) for row in cursor.fetchall()]
-        return perfumes
-    finally:
-        conn.close()
+def fetch_all_originals(conn):
+    """Вернуть все строки OriginalPerfume."""
+    cur = conn.cursor()
+    cur.execute("SELECT id, brand, name, price_eur, url FROM OriginalPerfume")
+    return cur.fetchall()
 
-def find_perfume_and_clones(original_brand: str, original_name: str) -> tuple:
+def find_best_originals(conn, query, limit=3, score_cutoff=60):
     """
-    Ищет оригинальный парфюм и его клоны по бренду и названию.
-    
-    Возвращает:
-    - кортеж (original_perfume, list_of_clones).
+    Fuzzy-поиск оригиналов по строке query.
+    Возвращает список словарей: {id, brand, name, score}.
+    score_cutoff — минимальная допустимая похожесть (0-100).
     """
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        
-        # Поиск оригинала
-        cursor.execute(
-            "SELECT * FROM OriginalPerfume WHERE brand = ? AND name = ?",
-            (original_brand, original_name)
-        )
-        original = cursor.fetchone()
-        
-        if original:
-            # Если оригинал найден, ищем его клоны
-            cursor.execute(
-                "SELECT * FROM CopyPerfume WHERE original_id = ?",
-                (original['id'],)
-            )
-            clones = [dict(row) for row in cursor.fetchall()]
-            return dict(original), clones
-            
-    finally:
-        conn.close()
-    
-    return None, []
+    rows = fetch_all_originals(conn)
+    choices = []
+    ids = []
+    for r in rows:
+        brand = r["brand"] or ""
+        name = r["name"] or ""
+        display = (brand + " " + name).strip()
+        if not display:
+            continue
+        choices.append(display)
+        ids.append(r["id"])
 
-def find_by_name_or_brand(query: str, is_brand_only: bool = False) -> list:
-    """
-    Ищет парфюмы по названию или бренду, используя нечеткий поиск.
-    Если is_brand_only=True, ищет только по бренду.
-    
-    Возвращает:
-    - список найденных словарей-парфюмов.
-    """
-    conn = get_db_connection()
+    if not choices:
+        return []
+
+    # Используем token_set_ratio — хорошо для перестановок слов и опечаток
+    raw_matches = process.extract(query, choices, scorer=fuzz.token_set_ratio, limit=limit)
     results = []
-    try:
-        cursor = conn.cursor()
-        normalized_query = "%" + query.lower() + "%"
-        
-        # Поиск в оригинальных парфюмах
-        if not is_brand_only:
-            cursor.execute(
-                "SELECT id, brand, name FROM OriginalPerfume WHERE LOWER(name) LIKE ? OR LOWER(brand) LIKE ?",
-                (normalized_query, normalized_query)
-            )
-        else:
-            cursor.execute(
-                "SELECT id, brand, name FROM OriginalPerfume WHERE LOWER(brand) LIKE ?",
-                (normalized_query,)
-            )
-            
-        results = [dict(row) for row in cursor.fetchall()]
-            
-    finally:
-        conn.close()
-        
+    for choice_text, score, idx in raw_matches:
+        if score >= score_cutoff:
+            r = next((x for x in rows if x["id"] == ids[idx]), None)
+            if r:
+                results.append({"id": ids[idx], "brand": r["brand"], "name": r["name"], "score": score})
     return results
+
+def get_original_by_id(conn, original_id):
+    cur = conn.cursor()
+    cur.execute("SELECT id, brand, name, price_eur, url FROM OriginalPerfume WHERE id = ?", (original_id,))
+    return cur.fetchone()
+
+def get_copies_by_original_id(conn, original_id):
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, original_id, brand, name, price_eur, url, notes, saved_amount FROM CopyPerfume WHERE original_id = ?",
+        (original_id,),
+    )
+    return cur.fetchall()

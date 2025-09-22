@@ -10,18 +10,18 @@
 perfume-bot/
 │
 ├── data/
-│   └── perfumes.db             \# База данных SQLite с парфюмами
+│   └── perfumes.db
 │
-├── bot.py                      \# Основной код Telegram бота
-├── database.py                 \# Функции для работы с базой данных
-├── utils.py         \# Вспомогательные функции (логирование, 
-|                       конвертация валют, fuzzy search)
-|                              
-├── requirements.txt            \# Зависимости Python
-├── .env                        \# BOT\_TOKEN и другие настройки
-├── check.py                    \# Скрипт для проверки целостности данных
-└── README.md                   \# Текущий файл
-
+├── bot.py                  # только запуск и обработчики телеграма
+├── database.py             # работа с SQLite (у тебя уже есть)
+├── search.py               # логика парсинга и поиска (бренд/название, fuzzy)
+├── formatter.py            # сборка красивого текста ответа
+├── followup.py             # логика "Ура! 🎉..." (отправка 1 раз)
+├── utils.py                # нормализация текста, транслитерация
+│
+├── requirements.txt
+├── .env
+└── README.md
 ```
 
 ---
@@ -55,5 +55,8 @@ perfume-bot/
 | `notes`          | TEXT       | Примечания к аромату            |
 | `saved_amount`   | REAL       | Экономия в %: `(orig_price_eur - dupe_price_eur) / orig_price_eur * 100` |
 
+BOT_TOKEN="ВАШ_ТОКЕН_ЗДЕСЬ"
+python database.py
 
-
+pip install -r requirements.txt
+python bot.py
