@@ -1,81 +1,85 @@
-# database.py
-
 import sqlite3
 
-# --- Настройка и создание таблиц ---
+DATABASE_PATH = 'data/perfumes.db'
 
-def setup_database():
-    """Создает таблицы в базе данных, если их еще нет."""
-    # Подключаемся к файлу data/perfumes.db
-    conn = sqlite3.connect('data/perfumes.db')
-    cursor = conn.cursor()
+def get_db_connection():
+    """Создает и возвращает соединение с базой данных."""
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.row_factory = sqlite3.Row  # Позволяет получать строки как словари
+    return conn
 
-    # Создаем таблицу для оригинальных парфюмов
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS OriginalPerfume (
-        id TEXT PRIMARY KEY,
-        brand TEXT NOT NULL,
-        name TEXT NOT NULL,
-        price_eur REAL NOT NULL,
-        url TEXT
-    )
-    ''')
-
-    # Создаем таблицу для клонов
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS CopyPerfume (
-        id TEXT PRIMARY KEY,
-        original_id TEXT,
-        brand TEXT NOT NULL,
-        name TEXT NOT NULL,
-        price_eur REAL NOT NULL,
-        url TEXT,
-        notes TEXT,
-        saved_amount REAL,
-        FOREIGN KEY (original_id) REFERENCES OriginalPerfume (id)
-    )
-    ''')
-    
-    # Сохраняем изменения и закрываем соединение
-    conn.commit()
-    conn.close()
-    print("База данных успешно настроена.")
-
-
-# --- Функции для поиска данных ---
-
-def get_all_original_perfumes():
-    """Возвращает список всех оригинальных парфюмов (бренд + название)."""
-    conn = sqlite3.connect('data/perfumes.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT brand, name FROM OriginalPerfume")
-    # Превращаем результат в список строк вида "Dior Sauvage"
-    perfumes = [f"{row[0]} {row[1]}" for row in cursor.fetchall()]
-    conn.close()
-    return perfumes
-
-
-def find_perfume_and_clones(full_name):
-    """Находит оригинал и все его клоны по полному названию."""
-    conn = sqlite3.connect('data/perfumes.db')
-    # Позволяет получать результаты в виде словарей (удобнее)
-    conn.row_factory = sqlite3.Row 
-    cursor = conn.cursor()
-
-    # Разделяем "Бренд Название" обратно
-    brand, name = full_name.split(' ', 1)
-    
-    # Находим оригинал
-    cursor.execute("SELECT * FROM OriginalPerfume WHERE brand = ? AND name = ?", (brand, name))
-    original = cursor.fetchone()
-
-    if not original:
+def get_all_original_perfumes() -> list:
+    """Извлекает все оригинальные парфюмы из базы данных."""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM OriginalPerfume")
+        perfumes = [dict(row) for row in cursor.fetchall()]
+        return perfumes
+    finally:
         conn.close()
-        return None, []
 
-    # Находим все его клоны
-    cursor.execute("SELECT * FROM CopyPerfume WHERE original_id = ?", (original['id'],))
-    clones = cursor.fetchall()
+def find_perfume_and_clones(original_brand: str, original_name: str) -> tuple:
+    """
+    Ищет оригинальный парфюм и его клоны по бренду и названию.
     
-    conn.close()
-    return original, clones
+    Возвращает:
+    - кортеж (original_perfume, list_of_clones).
+    """
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        
+        # Поиск оригинала
+        cursor.execute(
+            "SELECT * FROM OriginalPerfume WHERE brand = ? AND name = ?",
+            (original_brand, original_name)
+        )
+        original = cursor.fetchone()
+        
+        if original:
+            # Если оригинал найден, ищем его клоны
+            cursor.execute(
+                "SELECT * FROM CopyPerfume WHERE original_id = ?",
+                (original['id'],)
+            )
+            clones = [dict(row) for row in cursor.fetchall()]
+            return dict(original), clones
+            
+    finally:
+        conn.close()
+    
+    return None, []
+
+def find_by_name_or_brand(query: str, is_brand_only: bool = False) -> list:
+    """
+    Ищет парфюмы по названию или бренду, используя нечеткий поиск.
+    Если is_brand_only=True, ищет только по бренду.
+    
+    Возвращает:
+    - список найденных словарей-парфюмов.
+    """
+    conn = get_db_connection()
+    results = []
+    try:
+        cursor = conn.cursor()
+        normalized_query = "%" + query.lower() + "%"
+        
+        # Поиск в оригинальных парфюмах
+        if not is_brand_only:
+            cursor.execute(
+                "SELECT id, brand, name FROM OriginalPerfume WHERE LOWER(name) LIKE ? OR LOWER(brand) LIKE ?",
+                (normalized_query, normalized_query)
+            )
+        else:
+            cursor.execute(
+                "SELECT id, brand, name FROM OriginalPerfume WHERE LOWER(brand) LIKE ?",
+                (normalized_query,)
+            )
+            
+        results = [dict(row) for row in cursor.fetchall()]
+            
+    finally:
+        conn.close()
+        
+    return results
