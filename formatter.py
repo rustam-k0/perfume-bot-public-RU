@@ -34,3 +34,4 @@ def format_response(original, copies):
     lines.append("У вас отлично получилось!")
     lines.append("Советую поискать эти ароматы в  любимой парфюмерной сети или на маркетплейсе.")
     return "\n".join(lines)
+
