@@ -2,20 +2,25 @@ import os
 import time
 from flask import Flask, request
 import telebot
+from dotenv import load_dotenv
 
 from database import get_connection, get_copies_by_original_id
 from search import find_original
 from formatter import format_response, welcome_text
 from followup import schedule_followup_once
 
-# --- Настройки ---
-BOT_TOKEN = "8310554132:AAH1oM9QqkruRsLEYriODA6UOBtXll0HVFQ"
+# --- Загружаем переменные окружения ---
+load_dotenv()
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 DB_PATH = os.getenv("DB_PATH", "data/perfumes.db")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN не указан!")
+    raise ValueError("BOT_TOKEN не указан в .env!")
+if not WEBHOOK_URL:
+    raise ValueError("WEBHOOK_URL не указан в .env!")
 
-# --- Инициализация ---
+# --- Инициализация бота и базы данных ---
 bot = telebot.TeleBot(BOT_TOKEN)
 conn = get_connection(DB_PATH)
 
@@ -62,6 +67,5 @@ def webhook():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     bot.remove_webhook()
-    # Поставь здесь публичный URL Render
-    bot.set_webhook(url=f"https://<твое-доменное-имя>.onrender.com/webhook")
+    bot.set_webhook(url=WEBHOOK_URL)
     app.run(host="0.0.0.0", port=port)
