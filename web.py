@@ -5,7 +5,7 @@ from flask import Flask, request
 import telebot
 from dotenv import load_dotenv
 
-from database import get_connection, get_copies_by_original_id, log_message
+from database import get_connection, get_copies_by_original_id, log_message, init_db_if_not_exists
 from search import find_original
 from formatter import format_response, welcome_text
 from followup import schedule_followup_once
@@ -24,6 +24,7 @@ if not WEBHOOK_URL:
 # --- Инициализация бота и базы данных ---
 bot = telebot.TeleBot(BOT_TOKEN)
 conn = get_connection(DB_PATH)
+init_db_if_not_exists(conn)
 
 last_user_ts = {}
 followup_sent = {}
