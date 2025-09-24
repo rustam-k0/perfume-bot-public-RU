@@ -1,6 +1,8 @@
 # perfume-bot/formatter.py
 # Форматирование текста ответов.
 
+import urllib.parse
+
 def welcome_text():
     return (
         "Привет! 👋 Я помогу найти доступный аналог для вашего любимого парфюма.\n\n"
@@ -9,29 +11,35 @@ def welcome_text():
         "Попробуйте отправить название оригинала в формате: «Бренд Название», например: Dior Sauvage."
     )
 
+def create_search_link(brand, name):
+    """
+    Создает URL для поиска Google по заданным бренду и названию.
+    """
+    query = f"купить {brand} {name} онлайн"
+    encoded_query = urllib.parse.quote_plus(query)
+    return f"https://www.google.com/search?q={encoded_query}"
+
 def format_response(original, copies):
     lines = []
-    header = f"{original['brand']} {original['name']}".strip()
-    if header:
-        lines.append(header)
+    
+    # Форматируем оригинал
+    original_link = create_search_link(original['brand'], original['name'])
+    lines.append(f"**{original['brand']} {original['name']}**")
+    lines.append(f"[🛒 Купить оригинал]({original_link})")
     lines.append("---------------------")
-    
-    
 
     if not copies:
         lines.append("Не получилось найти то, что вы искали. Пожалуйста, попробуйте снова. 😅")
     else:
         for c in copies:
             brand, name = c["brand"], c["name"]
-            if brand and name:
-                lines.append(f"▪️ {brand}: {name}")
-            elif name:
-                lines.append(f"▪️ {name}")
-            elif brand:
-                lines.append(f"▪️ {brand}")
-
+            copy_link = create_search_link(brand, name)
+            
+            lines.append(f"▪️ {brand}: {name}")
+            lines.append(f"[🛒 Купить клон]({copy_link})")
+            
     lines.append("---------------------")
     lines.append("У вас отлично получилось!")
     lines.append("Советую поискать эти ароматы в  любимой парфюмерной сети или на маркетплейсе.")
+    
     return "\n".join(lines)
-
