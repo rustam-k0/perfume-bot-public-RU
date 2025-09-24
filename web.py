@@ -45,7 +45,7 @@ def handle_text(msg):
 
     original = result["original"]
     copies = get_copies_by_original_id(conn, original["id"])
-    bot.reply_to(msg, format_response(original, copies))
+    bot.reply_to(msg, format_response(original, copies), parse_mode='MarkdownV2')
 
     schedule_followup_once(bot, chat_id, now, last_user_ts, followup_sent)
 
