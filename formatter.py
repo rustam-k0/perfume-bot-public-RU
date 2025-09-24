@@ -9,6 +9,7 @@ def welcome_text():
         "Я ищу доступные аналоги дорогого парфюма.\n\n"
         "Отправьте сообщение в формате: БРЕНД + НАЗВАНИЕ.\n\n"
         "Например: Dior Sauvage.\n\n"
+        "P.S.Иногда я могу растеряться. Пожалуйста, не сердитесь.🥺\n\n"
     )
 
 def create_search_link(brand, name):
@@ -32,7 +33,9 @@ def format_response(original, copies):
     lines.append("---------------------")
 
     if not copies:
-        lines.append("К сожалению, для этого аромата не удалось найти клонов. 😅")
+        lines.append("Мне не удалось найти этот аромат."
+                     "Скорее всего, я не знаком с ним или мне не хвататет данных для поиска.\n\n"
+                     "Может быть, попробуете написать бренд и название целиком? Или другой аромат?😣 \n\n")
     else:
         for c in copies:
             brand = c["brand"] if c["brand"] else ""
@@ -49,6 +52,6 @@ def format_response(original, copies):
             
     lines.append("---------------------")
     lines.append("Отлично!")
-    lines.append("Думаю, вы сможете сильно сэкономить.")
+    lines.append("Надеюсь, я правильно вас понял. Хотите попробовать ещё?")
     
     return "\n".join(lines)

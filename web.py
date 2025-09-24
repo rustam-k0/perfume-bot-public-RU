@@ -1,10 +1,11 @@
+# perfume-bot/web.py
 import os
 import time
 from flask import Flask, request
 import telebot
 from dotenv import load_dotenv
 
-from database import get_connection, get_copies_by_original_id
+from database import get_connection, get_copies_by_original_id, log_message
 from search import find_original
 from formatter import format_response, welcome_text
 from followup import schedule_followup_once
@@ -30,6 +31,7 @@ followup_sent = {}
 # --- Обработчики ---
 @bot.message_handler(commands=["start", "help"])
 def start(msg):
+    log_message(conn, msg.chat.id, msg.text, 'start_command')
     bot.reply_to(msg, welcome_text())
 
 @bot.message_handler(func=lambda m: True, content_types=["text"])
@@ -40,11 +42,13 @@ def handle_text(msg):
 
     result = find_original(conn, msg.text)
     if not result["ok"]:
+        log_message(conn, msg.chat.id, msg.text, 'fail', result['message'])
         bot.reply_to(msg, result["message"])
         return
 
     original = result["original"]
     copies = get_copies_by_original_id(conn, original["id"])
+    log_message(conn, msg.chat.id, msg.text, 'success', f"Found: {original['brand']} {original['name']}")
     bot.reply_to(msg, format_response(original, copies), parse_mode='Markdown', disable_web_page_preview=True)
 
     schedule_followup_once(bot, chat_id, now, last_user_ts, followup_sent)

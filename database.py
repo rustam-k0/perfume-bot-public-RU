@@ -2,6 +2,7 @@
 # Модуль для работы с базой данных SQLite.
 
 import sqlite3
+import time
 
 def get_connection(path="data/perfumes.db"):
     """
@@ -50,3 +51,25 @@ def get_copies_by_original_id(conn, original_id):
         (original_id,),
     )
     return cur.fetchall()
+
+def log_message(conn, user_id, message, status, notes=""):
+    """
+    Логирует сообщение пользователя в таблицу UserMessages.
+    """
+    cursor = conn.cursor()
+    # Проверяем, существует ли таблица, и создаём, если нет.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS UserMessages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            timestamp INTEGER NOT NULL,
+            message TEXT NOT NULL,
+            status TEXT NOT NULL,
+            notes TEXT
+        )
+    """)
+    cursor.execute(
+        "INSERT INTO UserMessages (user_id, timestamp, message, status, notes) VALUES (?, ?, ?, ?, ?)",
+        (user_id, int(time.time()), message, status, notes)
+    )
+    conn.commit()
