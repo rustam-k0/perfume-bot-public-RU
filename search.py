@@ -1,3 +1,4 @@
+# perfume-bot/search.py
 # Логика поиска парфюмов: гибкий поиск с приоритетом точного совпадения
 
 from rapidfuzz import fuzz
@@ -54,53 +55,30 @@ def init_catalog(conn):
     """Инициализация глобальных переменных каталога."""
     _load_catalog(conn)
 
-def _search_in_catalog(user_norm, search_space):
+def _find_in_catalog(user_text, search_space):
     """
     Внутренняя вспомогательная функция для поиска
     по нормализованному тексту в заданном пространстве.
+    Использует fuzz.token_set_ratio для большей гибкости.
     """
-    # 1. Точное совпадение
+    user_norm = normalize_for_match(user_text)
+    
+    # Сначала ищем точное совпадение
     for item in search_space:
         if item["display_norm"] == user_norm:
-            return {"ok": True, "result": item}
-    
-    # 2. Fuzzy-поиск
+            return {"ok": True, "result": item, "score": 100}
+
+    # Затем ищем fuzzy-совпадение
     best_match, score = None, 0
     for item in search_space:
-        s = fuzz.ratio(user_norm, item["display_norm"])
+        s = fuzz.token_set_ratio(user_norm, item["display_norm"])
         if s > score:
             best_match, score = item, s
     
     if best_match and score >= 90:
-        return {"ok": True, "result": best_match}
+        return {"ok": True, "result": best_match, "score": score}
     
-    return {"ok": False, "result": None}
-
-def find_original_by_clone(conn, clone_text):
-    """Ищет клон и возвращает связанный с ним оригинал."""
-    user_norm = normalize_for_match(clone_text)
-    
-    # Поиск клона в каталоге клонов
-    search_result = _search_in_catalog(user_norm, CLONE_CATALOG)
-    
-    if search_result["ok"]:
-        found_clone = search_result["result"]
-        # Используем original_id для поиска оригинала в базе данных
-        original_data = fetch_original_by_id(conn, found_clone["original_id"])
-        
-        if original_data:
-            # Преобразуем данные из БД в нужный формат
-            original_item = {
-                "id": original_data["id"],
-                "brand": original_data["brand"],
-                "name": original_data["name"],
-                "brand_norm": normalize_for_match(original_data["brand"]),
-                "name_norm": normalize_for_match(original_data["name"]),
-                "display_norm": normalize_for_match(f"{original_data['brand']} {original_data['name']}"),
-            }
-            return {"ok": True, "original": original_item}
-    
-    return {"ok": False, "message": "Не удалось найти оригинал для этого клона."}
+    return {"ok": False, "result": None, "score": 0}
 
 def find_original(conn, user_text):
     """
@@ -117,41 +95,40 @@ def find_original(conn, user_text):
     user_norm = normalize_for_match(user_text)
     user_words = user_norm.split()
 
-    # Проверяем, является ли запрос одним словом
-    if len(user_words) == 1:
-        # Проверка на совпадение с брендом
-        if user_norm in BRAND_MAP:
-            return {"ok": False, "message": "Ой, простите, кажется, вы не указали название парфюма полностью. Пожалуйста, введите данные целиком, так вероятность ошибки меньше."}
-        
-        # Если не бренд, пробуем найти как название
-        # 1. Fuzzy-поиск только по названию
-        best, score = None, 0
+    # Проверка на наличие бренда в запросе
+    found_brand = any(word in BRAND_MAP for word in user_words)
+    if not found_brand and len(user_words) >= 2:
+        # Если в запросе несколько слов, но нет бренда, это, скорее всего, название
+        # Просто продолжаем поиск, т.к. fuzzy-поиск по display_norm это обработает.
+        pass
+    elif not found_brand and len(user_words) == 1:
+        # Если в запросе одно слово и это не бренд, пробуем найти по названию
         for c in CATALOG:
-            s = fuzz.ratio(user_norm, c["name_norm"])
-            if s > score:
-                best, score = c, s
-        if best and score >= 90:
-            return {"ok": True, "original": best}
-    
-    # --- Стандартный поиск для запросов с несколькими словами ---
-    
-    # 1. Точное совпадение brand + name
-    search_result = _search_in_catalog(user_norm, CATALOG)
+            if fuzz.ratio(user_norm, c["name_norm"]) >= 90:
+                return {"ok": True, "original": c}
+        return {"ok": False, "message": "У меня не получилось найти то, что вы искали. Пожалуйста, попробуйте снова. 😅"}
+
+    # Поиск по оригинальным парфюмам
+    search_result = _find_in_catalog(user_text, CATALOG)
     if search_result["ok"]:
         return {"ok": True, "original": search_result["result"]}
     
-    # 2. Поиск клона и его оригинала
-    clone_search_result = find_original_by_clone(conn, user_text)
-    if clone_search_result["ok"]:
-        return clone_search_result
-    
-    # 3. Fuzzy-поиск по display_norm
-    best, score = None, 0
-    for c in CATALOG:
-        s = fuzz.ratio(user_norm, c["display_norm"])
-        if s > score:
-            best, score = c, s
-    if best and score >= 90:
-        return {"ok": True, "original": best}
+    # Поиск по клонам
+    clone_result = _find_in_catalog(user_text, CLONE_CATALOG)
+    if clone_result["ok"]:
+        found_clone = clone_result["result"]
+        original_data = fetch_original_by_id(conn, found_clone["original_id"])
+        
+        if original_data:
+            original_item = {
+                "id": original_data["id"],
+                "brand": original_data["brand"],
+                "name": original_data["name"],
+                "brand_norm": normalize_for_match(original_data["brand"]),
+                "name_norm": normalize_for_match(original_data["name"]),
+                "display_norm": normalize_for_match(f"{original_data['brand']} {original_data['name']}"),
+            }
+            return {"ok": True, "original": original_item}
 
+    # Если ничего не найдено
     return {"ok": False, "message": "У меня не получилось найти то, что вы искали. Пожалуйста, попробуйте снова. 😅"}
