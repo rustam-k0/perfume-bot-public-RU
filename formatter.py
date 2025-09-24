@@ -24,17 +24,28 @@ def format_response(original, copies):
     
     # Форматируем оригинал
     original_link = create_search_link(original['brand'], original['name'])
-    lines.append(f"**{original['brand']} {original['name']}** [купить]({original_link})")
+    
+    original_brand = original['brand'] if original['brand'] else ''
+    original_name = original['name'] if original['name'] else ''
+    
+    lines.append(f"**{original_brand} {original_name}** [купить]({original_link})")
     lines.append("---------------------")
 
     if not copies:
         lines.append("К сожалению, для этого аромата не удалось найти клонов. 😅")
     else:
         for c in copies:
-            brand, name = c["brand"], c["name"]
+            brand = c["brand"] if c["brand"] else ""
+            name = c["name"] if c["name"] else ""
             copy_link = create_search_link(brand, name)
             
-            lines.append(f"▪️ {brand}: {name} [купить]({copy_link})")
+            # Условное форматирование для вывода названия и бренда
+            if brand and name:
+                lines.append(f"▪️ {brand}: {name} [купить]({copy_link})")
+            elif name:
+                lines.append(f"▪️ {name} [купить]({copy_link})")
+            elif brand:
+                lines.append(f"▪️ {brand} [купить]({copy_link})")
             
     lines.append("---------------------")
     lines.append("У вас отлично получилось!")
