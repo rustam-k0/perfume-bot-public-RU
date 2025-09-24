@@ -48,7 +48,7 @@ def format_response(original, copies):
                 lines.append(f"▪️ {brand} [купить]({copy_link})")
             
     lines.append("---------------------")
-    lines.append("У вас отлично получилось!")
-    lines.append("Советую поискать эти ароматы в любимой парфюмерной сети или на маркетплейсе.")
+    lines.append("Отлично!")
+    lines.append("Думаю, вы сможете сильно сэкономить.")
     
     return "\n".join(lines)
