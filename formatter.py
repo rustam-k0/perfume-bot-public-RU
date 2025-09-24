@@ -22,9 +22,9 @@ def create_search_link(brand, name):
 def format_response(original, copies):
     lines = []
     
-    # Форматируем оригинал с гиперссылкой в одной строке
+    # Форматируем оригинал
     original_link = create_search_link(original['brand'], original['name'])
-    lines.append(f"**{original['brand']} {original['name']}** ([купить]({original_link}))")
+    lines.append(f"**{original['brand']} {original['name']}** [купить]({original_link})")
     lines.append("---------------------")
 
     if not copies:
@@ -34,10 +34,10 @@ def format_response(original, copies):
             brand, name = c["brand"], c["name"]
             copy_link = create_search_link(brand, name)
             
-            lines.append(f"▪️ {brand}: {name} ([купить]({copy_link}))")
+            lines.append(f"▪️ {brand}: {name} [купить]({copy_link})")
             
     lines.append("---------------------")
     lines.append("У вас отлично получилось!")
-    lines.append("Советую поискать эти ароматы в любимой парфюмерной сети или на маркетплейсе.")
+    lines.append("Уверен,с помощью этих данных вы сможете сэкономить кучу денег.")
     
     return "\n".join(lines)
