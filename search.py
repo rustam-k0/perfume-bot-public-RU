@@ -7,7 +7,7 @@ from database import fetch_all_originals
 CATALOG = None
 
 def load_catalog(conn):
-    """Загрузка всех оригиналов с клонами в память и подготовка словарей для поиска"""
+    """Загрузка всех оригиналов с клонами в память"""
     rows = fetch_all_originals(conn)
     catalog = []
 
@@ -30,7 +30,7 @@ def init_catalog(conn):
     CATALOG = load_catalog(conn)
 
 def find_original(conn, user_text):
-    """Поиск оригинала по введенному тексту (оригинал или клон)"""
+    """Поиск оригинала по введенному тексту"""
     global CATALOG
     if not user_text or not user_text.strip():
         return {"ok": False, "message": "Пустой запрос. Отправь в формате: 'Бренд Название'."}
@@ -40,34 +40,39 @@ def find_original(conn, user_text):
 
     user_norm = normalize_for_match(user_text)
 
-    best, score = None, 0
-
+    # --------- 1. Поиск по оригиналу ----------
+    # 1a. Точное совпадение
     for c in CATALOG:
-        # 1. Сначала точное совпадение по оригиналу
         if c["display_norm"] == user_norm:
             return {"ok": True, "original": c}
 
-        # 2. Fuzzy-поиск по оригиналу (display_norm)
+    # 1b. Fuzzy по display_norm
+    best, score = None, 0
+    for c in CATALOG:
         s = fuzz.ratio(user_norm, c["display_norm"])
         if s > score:
             best, score = c, s
+    if best and score >= 90:
+        return {"ok": True, "original": best}
 
-        # 3. Fuzzy-поиск только по названию
+    # 1c. Fuzzy только по названию
+    best, score = None, 0
+    for c in CATALOG:
         s = fuzz.ratio(user_norm, c["name_norm"])
         if s > score:
             best, score = c, s
+    if best and score >= 90:
+        return {"ok": True, "original": best}
 
-        # 4. Fuzzy-поиск по клонам
+    # --------- 2. Поиск по клонам ----------
+    best, score = None, 0
+    for c in CATALOG:
         for clone_norm in c.get("clones", []):
             s = fuzz.ratio(user_norm, clone_norm)
             if s > score:
                 best, score = c, s
-
-    # Порог для fuzzy-поиска
-    if best and score >= 90:
-        return {"ok": True, "original": best}
-    elif best and score >= 85:
-        # чуть ниже порог для поиска по клонам
+    if best and score >= 85:  # чуть ниже порог для поиска по клонам
         return {"ok": True, "original": best}
 
+    # --------- 3. Не нашли ----------
     return {"ok": False, "message": "У меня не получилось найти то, что вы искали. Пожалуйста, попробуйте снова. 😅"}
