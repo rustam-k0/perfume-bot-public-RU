@@ -66,4 +66,4 @@ def find_original(conn, user_text):
     if best and score >= 90:
         return {"ok": True, "original": best}
 
-    return {"ok": False, "message": "Не могли бы вы написать бренд парфюма и название? Например: Chanel Bleu De Chanel"}
+    return {"ok": False, "message": "У меня не получилось найти то, что вы искали. Пожалуйста, попробуйте снова. 😅"}
