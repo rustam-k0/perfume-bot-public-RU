@@ -1,12 +1,15 @@
+# perfume-bot/web.py
+
 import os
 import time
 from flask import Flask, request
 import telebot
 from dotenv import load_dotenv
 
-from database import get_connection, get_copies_by_original_id
-from search import find_original
-from formatter import format_response, welcome_text
+# Обновляем импорты для соответствия новой логике
+from database import connect_db, fetch_clones_by_original_id
+from search import find_original, init_catalog  # Добавляем init_catalog
+from formatter import format_perfume_info, welcome_text # Меняем format_response на format_perfume_info
 from followup import schedule_followup_once
 
 # --- Загружаем переменные окружения ---
@@ -20,9 +23,14 @@ if not BOT_TOKEN:
 if not WEBHOOK_URL:
     raise ValueError("WEBHOOK_URL не указан в .env!")
 
-# --- Инициализация бота и базы данных ---
+# --- Инициализация ---
 bot = telebot.TeleBot(BOT_TOKEN)
-conn = get_connection(DB_PATH)
+# Используем консистентное имя функции для подключения
+conn = connect_db(DB_PATH) 
+
+# (!) ВАЖНО: Инициализируем каталог поиска один раз при запуске приложения
+init_catalog(conn)
+print("Каталог парфюмов загружен в память для быстрого поиска.")
 
 last_user_ts = {}
 followup_sent = {}
@@ -38,16 +46,30 @@ def handle_text(msg):
     now = time.time()
     last_user_ts[chat_id] = now
 
-    result = find_original(conn, msg.text)
-    if not result["ok"]:
-        bot.reply_to(msg, result["message"])
-        return
+    # 1. Вызываем обновленную функцию поиска
+    search_result = find_original(conn, msg.text)
 
-    original = result["original"]
-    copies = get_copies_by_original_id(conn, original["id"])
-    bot.reply_to(msg, format_response(original, copies), parse_mode='Markdown', disable_web_page_preview=True)
+    # 2. Если поиск успешен, получаем клоны и вызываем новый форматтер
+    if search_result["ok"]:
+        original = search_result["original"]
+        copies = fetch_clones_by_original_id(conn, original["id"])
+        
+        # Вызываем новый форматтер, который учитывает match_type
+        response_text = format_perfume_info(search_result, copies)
+    else:
+        # Если не найдено, возвращаем информативное сообщение из search.py
+        response_text = search_result["message"]
+    
+    bot.send_message(
+        chat_id, 
+        response_text, 
+        parse_mode='Markdown', 
+        disable_web_page_preview=True
+    )
 
-    schedule_followup_once(bot, chat_id, now, last_user_ts, followup_sent)
+    # Логика для отложенного сообщения остается без изменений
+    if search_result["ok"]:
+        schedule_followup_once(bot, chat_id, now, last_user_ts, followup_sent)
 
 # --- Flask веб-сервер ---
 app = Flask(__name__)
@@ -66,6 +88,8 @@ def webhook():
 # --- Запуск ---
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
+    print("Запуск бота через вебхук...")
     bot.remove_webhook()
+    time.sleep(0.5) # Пауза перед установкой нового вебхука
     bot.set_webhook(url=WEBHOOK_URL)
     app.run(host="0.0.0.0", port=port)
