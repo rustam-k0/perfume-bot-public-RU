@@ -1,75 +1,76 @@
-# perfume-bot/database.py
-# Модуль для работы с базой данных SQLite.
-
-import sqlite3
+# perfume-bot/web.py
+import os
 import time
+from flask import Flask, request
+import telebot
+from dotenv import load_dotenv
 
-def get_connection(path="data/perfumes.db"):
-    """
-    Возвращает объект подключения к SQLite.
-    check_same_thread=False позволяет использовать подключение
-    в многопоточном окружении бота.
-    """
-    conn = sqlite3.connect(path, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
+from database import get_connection, get_copies_by_original_id, log_message, init_db_if_not_exists
+from search import find_original
+from formatter import format_response, welcome_text
+from followup import schedule_followup_once
 
-def fetch_all_originals(conn):
-    """
-    Извлекает все записи из таблицы OriginalPerfume.
-    """
-    cur = conn.cursor()
-    cur.execute("SELECT id, brand, name FROM OriginalPerfume")
-    return cur.fetchall()
+# --- Загружаем переменные окружения ---
+load_dotenv()
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+DB_PATH = os.getenv("DB_PATH", "data/perfumes.db")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-def fetch_clones_for_search(conn):
-    """
-    Извлекает все записи из таблицы CopyPerfume, которые нужны для поиска.
-    """
-    cur = conn.cursor()
-    cur.execute("SELECT brand, name, original_id FROM CopyPerfume")
-    return cur.fetchall()
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN не указан в .env!")
+if not WEBHOOK_URL:
+    raise ValueError("WEBHOOK_URL не указан в .env!")
 
-def fetch_original_by_id(conn, original_id):
-    """
-    Извлекает один оригинальный парфюм по его уникальному ID.
-    """
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT id, brand, name, price_eur, url FROM OriginalPerfume WHERE id = ?",
-        (original_id,),
-    )
-    return cur.fetchone()
+# --- Инициализация бота и базы данных ---
+bot = telebot.TeleBot(BOT_TOKEN)
+conn = get_connection(DB_PATH)
+init_db_if_not_exists(conn)
 
-def get_copies_by_original_id(conn, original_id):
-    """
-    Извлекает все копии, связанные с заданным оригиналом.
-    """
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT id, original_id, brand, name, price_eur, url, notes, saved_amount FROM CopyPerfume WHERE original_id = ?",
-        (original_id,),
-    )
-    return cur.fetchall()
+last_user_ts = {}
+followup_sent = {}
 
-def log_message(conn, user_id, message, status, notes=""):
-    """
-    Логирует сообщение пользователя в таблицу UserMessages.
-    """
-    cursor = conn.cursor()
-    # Проверяем, существует ли таблица, и создаём, если нет.
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS UserMessages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            timestamp INTEGER NOT NULL,
-            message TEXT NOT NULL,
-            status TEXT NOT NULL,
-            notes TEXT
-        )
-    """)
-    cursor.execute(
-        "INSERT INTO UserMessages (user_id, timestamp, message, status, notes) VALUES (?, ?, ?, ?, ?)",
-        (user_id, int(time.time()), message, status, notes)
-    )
-    conn.commit()
+# --- Обработчики ---
+@bot.message_handler(commands=["start", "help"])
+def start(msg):
+    log_message(conn, msg.chat.id, msg.text, 'start_command')
+    bot.reply_to(msg, welcome_text())
+
+@bot.message_handler(func=lambda m: True, content_types=["text"])
+def handle_text(msg):
+    chat_id = msg.chat.id
+    now = time.time()
+    last_user_ts[chat_id] = now
+
+    result = find_original(conn, msg.text)
+    if not result["ok"]:
+        log_message(conn, msg.chat.id, msg.text, 'fail', result['message'])
+        bot.reply_to(msg, result["message"])
+        return
+
+    original = result["original"]
+    copies = get_copies_by_original_id(conn, original["id"])
+    log_message(conn, msg.chat.id, msg.text, 'success', f"Found: {original['brand']} {original['name']}")
+    bot.reply_to(msg, format_response(original, copies), parse_mode='Markdown', disable_web_page_preview=True)
+
+    schedule_followup_once(bot, chat_id, now, last_user_ts, followup_sent)
+
+# --- Flask веб-сервер ---
+app = Flask(__name__)
+
+@app.route("/", methods=["GET"])
+def index():
+    return "Perfume Bot is running!"
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    json_str = request.get_data().decode("utf-8")
+    update = telebot.types.Update.de_json(json_str)
+    bot.process_new_updates([update])
+    return "", 200
+
+# --- Запуск ---
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    bot.remove_webhook()
+    bot.set_webhook(url=WEBHOOK_URL)
+    app.run(host="0.0.0.0", port=port)
