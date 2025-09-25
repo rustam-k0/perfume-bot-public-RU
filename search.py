@@ -1,7 +1,9 @@
 # perfume-bot/search.py
-# Логика поиска парфюмов: гибкий поиск с приоритетом точного совпадения
+# Логика поиска парфюмов: гибкий поиск с приоритетом точного совпадения и устойчивостью к ошибкам.
 
 from rapidfuzz import fuzz
+# Замена ratio на более устойчивый WRatio для сравнения
+from rapidfuzz.fuzz import WRatio
 from utils import normalize_for_match
 from database import fetch_all_originals, fetch_clones_for_search, fetch_original_by_id
 
@@ -10,6 +12,8 @@ CATALOG = None
 BRAND_MAP = None
 NAME_MAP = None
 CLONE_CATALOG = None
+
+# --- Инициализация и загрузка каталога (Оставлена без изменений) ---
 
 def _load_catalog(conn):
     """
@@ -55,34 +59,37 @@ def init_catalog(conn):
     """Инициализация глобальных переменных каталога."""
     _load_catalog(conn)
 
-def _search_in_catalog(user_norm, search_space):
+# --- Улучшенные вспомогательные функции ---
+
+def _fuzzy_search_best(user_norm, search_space, target_key, min_score=90):
     """
-    Внутренняя вспомогательная функция для поиска
-    по нормализованному тексту в заданном пространстве.
+    Универсальная вспомогательная функция для фаззи-поиска.
+    Использует WRatio, который более устойчив к опечаткам и порядку слов.
     """
-    # 1. Точное совпадение
-    for item in search_space:
-        if item["display_norm"] == user_norm:
-            return {"ok": True, "result": item}
-    
-    # 2. Fuzzy-поиск
     best_match, score = None, 0
+    
+    # 1. Поиск точного совпадения (оптимизация)
     for item in search_space:
-        s = fuzz.ratio(user_norm, item["display_norm"])
+        if item[target_key] == user_norm:
+            return {"ok": True, "result": item}
+
+    # 2. Фаззи-поиск
+    for item in search_space:
+        # Используем WRatio для сравнения строк разной длины и с опечатками
+        s = WRatio(user_norm, item[target_key])
         if s > score:
             best_match, score = item, s
-    
-    if best_match and score >= 90:
+            
+    if best_match and score >= min_score:
         return {"ok": True, "result": best_match}
     
     return {"ok": False, "result": None}
 
-def find_original_by_clone(conn, clone_text):
-    """Ищет клон и возвращает связанный с ним оригинал."""
-    user_norm = normalize_for_match(clone_text)
-    
+def find_original_by_clone(conn, user_norm):
+    """Ищет клон по нормализованному тексту и возвращает связанный с ним оригинал."""
     # Поиск клона в каталоге клонов
-    search_result = _search_in_catalog(user_norm, CLONE_CATALOG)
+    # Минимальный скор снижен до 80, так как бренды клонов могут быть очень похожи
+    search_result = _fuzzy_search_best(user_norm, CLONE_CATALOG, "display_norm", min_score=80)
     
     if search_result["ok"]:
         found_clone = search_result["result"]
@@ -90,7 +97,7 @@ def find_original_by_clone(conn, clone_text):
         original_data = fetch_original_by_id(conn, found_clone["original_id"])
         
         if original_data:
-            # Преобразуем данные из БД в нужный формат
+            # Преобразуем данные из БД в нужный формат для возврата
             original_item = {
                 "id": original_data["id"],
                 "brand": original_data["brand"],
@@ -101,11 +108,20 @@ def find_original_by_clone(conn, clone_text):
             }
             return {"ok": True, "original": original_item}
     
-    return {"ok": False, "message": "Не удалось найти оригинал для этого клона."}
+    return {"ok": False, "message": "Поиск по клонам не дал результата."}
+
+
+# --- Главная функция поиска ---
 
 def find_original(conn, user_text):
     """
-    Главная функция поиска.
+    Главная функция поиска с многоступенчатой логикой:
+    1. Проверка на пустой запрос.
+    2. Инициализация каталога (если не сделано).
+    3. Поиск точного совпадения "Бренд Название" (Brand Name).
+    4. Поиск по клонам (если пользователь ввел название клона).
+    5. Поиск по отдельным компонентам (Бренд или Название) с фаззи-логикой.
+    6. Общий фаззи-поиск по "Бренд Название".
     """
     global CATALOG, BRAND_MAP, NAME_MAP
 
@@ -117,42 +133,47 @@ def find_original(conn, user_text):
 
     user_norm = normalize_for_match(user_text)
     user_words = user_norm.split()
+    
+    # ----------------------------------------------------
+    # Шаг 1: Точное совпадение (Display Norm)
+    # ----------------------------------------------------
+    match = _fuzzy_search_best(user_norm, CATALOG, "display_norm", min_score=100)
+    if match["ok"]:
+        return {"ok": True, "original": match["result"]}
 
-    # Проверяем, является ли запрос одним словом
-    if len(user_words) == 1:
-        # Проверка на совпадение с брендом
-        if user_norm in BRAND_MAP:
-            return {"ok": False, "message": "Ой, простите, кажется, вы не указали название парфюма полностью. Пожалуйста, введите данные целиком, так вероятность ошибки меньше."}
-        
-        # Если не бренд, пробуем найти как название
-        # 1. Fuzzy-поиск только по названию
-        best, score = None, 0
-        for c in CATALOG:
-            s = fuzz.ratio(user_norm, c["name_norm"])
-            if s > score:
-                best, score = c, s
-        if best and score >= 90:
-            return {"ok": True, "original": best}
-    
-    # --- Стандартный поиск для запросов с несколькими словами ---
-    
-    # 1. Точное совпадение brand + name
-    search_result = _search_in_catalog(user_norm, CATALOG)
-    if search_result["ok"]:
-        return {"ok": True, "original": search_result["result"]}
-    
-    # 2. Поиск клона и его оригинала
-    clone_search_result = find_original_by_clone(conn, user_text)
+    # ----------------------------------------------------
+    # Шаг 2: Поиск по клонам (пользователь мог ввести клон)
+    # ----------------------------------------------------
+    clone_search_result = find_original_by_clone(conn, user_norm)
     if clone_search_result["ok"]:
         return clone_search_result
-    
-    # 3. Fuzzy-поиск по display_norm
-    best, score = None, 0
-    for c in CATALOG:
-        s = fuzz.ratio(user_norm, c["display_norm"])
-        if s > score:
-            best, score = c, s
-    if best and score >= 90:
-        return {"ok": True, "original": best}
 
-    return {"ok": False, "message": "У меня не получилось найти то, что вы искали. Пожалуйста, попробуйте снова. 😅"}
+    # ----------------------------------------------------
+    # Шаг 3: Поиск по частям (для неполных или перепутанных запросов)
+    # ----------------------------------------------------
+    
+    # A. Поиск по названию (Name Only) - min_score=90
+    name_match = _fuzzy_search_best(user_norm, CATALOG, "name_norm", min_score=90)
+    if name_match["ok"]:
+        return {"ok": True, "original": name_match["result"]}
+
+    # B. Поиск по бренду (Brand Only) - min_score=90
+    brand_match = _fuzzy_search_best(user_norm, CATALOG, "brand_norm", min_score=90)
+    if brand_match["ok"]:
+        # Если найдено только по бренду, это может быть неточно. 
+        # Добавляем предупреждение, чтобы пользователь уточнил.
+        return {"ok": False, "message": f"Ой, кажется, вы не указали название парфюма полностью. Найден бренд **{brand_match['result']['brand']}**. Пожалуйста, введите данные целиком."}
+
+    # ----------------------------------------------------
+    # Шаг 4: Общий Фаззи-поиск (Display Norm) - min_score=85
+    # ----------------------------------------------------
+    # Снижаем порог для фаззи-поиска, чтобы поймать опечатки.
+    match = _fuzzy_search_best(user_norm, CATALOG, "display_norm", min_score=85)
+    if match["ok"]:
+        # Добавляем в ответ уведомление, что найдено неточно
+        return {"ok": True, "original": match["result"], "note": "Найдено по неточному совпадению. Проверьте результат."}
+    
+    # ----------------------------------------------------
+    # Шаг 5: Неудача
+    # ----------------------------------------------------
+    return {"ok": False, "message": "У меня не получилось найти то, что вы искали. Пожалуйста, попробуйте снова. 😅 Убедитесь, что вы указали бренд и название."}
