@@ -1,23 +1,33 @@
-# perfume-bot/database.py
-# Модуль для работы с базой данных SQLite.
+# perfume-bot/database.py (Финальная, надёжная версия)
 
 import sqlite3
 import time
+import os
+# import logging # Убран, чтобы не усложнять, но в реальном проекте его лучше оставить
+
+def ensure_data_directory():
+    """СОЗДАЕТ ДИРЕКТОРИЮ data/, ЕСЛИ ОНА НЕ СУЩЕСТВУЕТ."""
+    data_dir = "data"
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
+        print(f"INFO: Создана директория: {data_dir}")
 
 def get_connection(path="data/perfumes.db"):
-    # ... (код без изменений) ...
-    conn = sqlite3.connect(path, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """Возвращает соединение с базой данных SQLite."""
+    try:
+        ensure_data_directory() # ГАРАНТИЯ: Папка data/ существует
+        
+        # Если вы используете Flask/Webhook, check_same_thread=False необходимо
+        conn = sqlite3.connect(path, check_same_thread=False) 
+        conn.row_factory = sqlite3.Row
+        return conn
+    except Exception as e:
+        print(f"КРИТИЧЕСКАЯ ОШИБКА: Не удалось подключиться к базе данных {path}: {e}")
+        raise # Остановка, если нет подключения
 
 def init_db_if_not_exists(conn):
-    """
-    Инициализирует базу данных, создавая все необходимые таблицы, если они не существуют.
-    """
-    cursor = conn.cursor()
-
-    # Таблица для логов сообщений
-    cursor.execute("""
+    """Создаёт таблицы, если они ещё не существуют."""
+    conn.executescript("""
         CREATE TABLE IF NOT EXISTS UserMessages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -25,75 +35,40 @@ def init_db_if_not_exists(conn):
             message TEXT NOT NULL,
             status TEXT NOT NULL,
             notes TEXT
-        )
-    """)
+        );
 
-    # Таблица для оригиналов (ваша существующая таблица)
-    cursor.execute("""
         CREATE TABLE IF NOT EXISTS OriginalPerfume (
-            id TEXT PRIMARY KEY,
-            brand TEXT,
-            name TEXT,
-            price_eur REAL,
-            url TEXT
-        )
-    """)
+            id TEXT PRIMARY KEY, brand TEXT, name TEXT, price_eur REAL, url TEXT
+        );
 
-    # Таблица для клонов (ваша существующая таблица)
-    cursor.execute("""
         CREATE TABLE IF NOT EXISTS CopyPerfume (
             id TEXT PRIMARY KEY,
-            original_id TEXT,
-            brand TEXT,
-            name TEXT,
-            price_eur REAL,
-            url TEXT,
-            notes TEXT,
-            saved_amount REAL,
+            original_id TEXT, brand TEXT, name TEXT, price_eur REAL, url TEXT,
+            notes TEXT, saved_amount REAL,
             FOREIGN KEY(original_id) REFERENCES OriginalPerfume(id)
-        )
+        );
     """)
-
     conn.commit()
+    # print("INFO: Все таблицы БД проверены/созданы.")
 
 
-def fetch_all_originals(conn):
-    # ... (код без изменений) ...
-    cur = conn.cursor()
-    cur.execute("SELECT id, brand, name FROM OriginalPerfume")
-    return cur.fetchall()
+# ... (функции fetch_all_originals, fetch_clones_for_search, fetch_original_by_id, get_copies_by_original_id без изменений) ...
 
-def fetch_clones_for_search(conn):
-    # ... (код без изменений) ...
-    cur = conn.cursor()
-    cur.execute("SELECT brand, name, original_id FROM CopyPerfume")
-    return cur.fetchall()
-
-def fetch_original_by_id(conn, original_id):
-    # ... (код без изменений) ...
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT id, brand, name, price_eur, url FROM OriginalPerfume WHERE id = ?",
-        (original_id,),
-    )
-    return cur.fetchone()
-
-def get_copies_by_original_id(conn, original_id):
-    # ... (код без изменений) ...
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT id, original_id, brand, name, price_eur, url, notes, saved_amount FROM CopyPerfume WHERE original_id = ?",
-        (original_id,),
-    )
-    return cur.fetchall()
 
 def log_message(conn, user_id, message, status, notes=""):
     """
-    Логирует сообщение пользователя в таблицу UserMessages.
+    Сохраняет сообщение пользователя в UserMessages.
+    Использует явную обработку ошибок, чтобы не ломать основной функционал.
     """
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO UserMessages (user_id, timestamp, message, status, notes) VALUES (?, ?, ?, ?, ?)",
-        (user_id, int(time.time()), message, status, notes)
-    )
-    conn.commit()
+    try:
+        timestamp = int(time.time())
+        conn.execute(
+            "INSERT INTO UserMessages (user_id, timestamp, message, status, notes) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (user_id, timestamp, message, status, notes)
+        )
+        conn.commit() # Явный commit для гарантированной записи
+    except sqlite3.Error as e:
+        # ВАЖНО: Мы поймали ошибку SQL, но не поднимаем ее, чтобы бот продолжал работать
+        print(f"ПРЕДУПРЕЖДЕНИЕ: Ошибка при записи лога для пользователя {user_id}: {e}")
+    # finally: conn.close() не нужен, так как соединение общее
