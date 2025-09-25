@@ -1,12 +1,10 @@
 # perfume-bot/web.py
-import os
+import os # Этот модуль уже импортирован
 import time
 from flask import Flask, request
 import telebot
 from dotenv import load_dotenv
 
-# В database.py вы уже определили log_message,
-# поэтому не нужно ее переименовывать или менять ее сигнатуру.
 from database import get_connection, get_copies_by_original_id, log_message, init_db_if_not_exists
 from search import find_original
 from formatter import format_response, welcome_text
@@ -15,7 +13,12 @@ from followup import schedule_followup_once
 # --- Загружаем переменные окружения ---
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-DB_PATH = os.getenv("DB_PATH", "data/perfumes.db")
+
+# ОПТИМИЗАЦИЯ: Использование абсолютного пути для DB_PATH
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Если DB_PATH не указан в .env, он будет собран абсолютно: BASE_DIR/data/perfumes.db
+DB_PATH = os.getenv("DB_PATH", os.path.join(BASE_DIR, "data", "perfumes.db"))
+
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 if not BOT_TOKEN:
@@ -25,16 +28,15 @@ if not WEBHOOK_URL:
 
 # --- Инициализация бота и базы данных ---
 bot = telebot.TeleBot(BOT_TOKEN)
-conn = get_connection(DB_PATH)
+conn = get_connection(DB_PATH) # Использует теперь гарантированно правильный путь
 init_db_if_not_exists(conn)
 
 last_user_ts = {}
 followup_sent = {}
 
-# --- Обработчики ---
+# --- Обработчики (логика обработки текста обновлена для 'note' из search.py) ---
 @bot.message_handler(commands=["start", "help"])
 def start(msg):
-    # Log: Статус "start_command"
     log_message(conn, msg.chat.id, msg.text, 'start_command')
     bot.reply_to(msg, welcome_text())
 
@@ -48,7 +50,6 @@ def handle_text(msg):
     
     # 1. Обработка неуспешного поиска (включая неполный запрос по бренду)
     if not result["ok"]:
-        # Log: Статус "fail", заметка - это сообщение об ошибке
         log_message(conn, msg.chat.id, msg.text, 'fail', result['message'])
         bot.reply_to(msg, result["message"])
         return
@@ -60,7 +61,8 @@ def handle_text(msg):
     # Сборка заметки для лога. Включаем 'note' из search.py, если он есть.
     log_note = f"Found: {original['brand']} {original['name']}"
     if 'note' in result:
-        log_note += f" | NOTE: {result['note']}" # Добавляем информацию о фаззи-совпадении
+        # Добавляем информацию о фаззи-совпадении в лог
+        log_note += f" | NOTE: {result['note']}" 
         
     log_message(conn, msg.chat.id, msg.text, 'success', log_note)
     
@@ -74,7 +76,7 @@ def handle_text(msg):
 
     schedule_followup_once(bot, chat_id, now, last_user_ts, followup_sent)
 
-# --- Flask веб-сервер (без изменений) ---
+# --- Flask веб-сервер ---
 app = Flask(__name__)
 
 @app.route("/", methods=["GET"])
@@ -88,7 +90,7 @@ def webhook():
     bot.process_new_updates([update])
     return "", 200
 
-# --- Запуск (без изменений) ---
+# --- Запуск ---
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     bot.remove_webhook()
