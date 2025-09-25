@@ -17,18 +17,19 @@ def init_db_if_not_exists(conn):
     cursor = conn.cursor()
 
     # Таблица для логов сообщений
+    # Оптимизация: Явно используем AUTOINCREMENT для Primary Key в SQLite.
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS UserMessages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             timestamp INTEGER NOT NULL,
             message TEXT NOT NULL,
-            status TEXT NOT NULL,
+            status TEXT NOT NULL, -- success, fail, start_command
             notes TEXT
         )
     """)
 
-    # Таблица для оригиналов (ваша существующая таблица)
+    # Таблица для оригиналов (без изменений)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS OriginalPerfume (
             id TEXT PRIMARY KEY,
@@ -39,7 +40,7 @@ def init_db_if_not_exists(conn):
         )
     """)
 
-    # Таблица для клонов (ваша существующая таблица)
+    # Таблица для клонов (без изменений)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS CopyPerfume (
             id TEXT PRIMARY KEY,

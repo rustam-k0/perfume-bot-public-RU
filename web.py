@@ -5,6 +5,8 @@ from flask import Flask, request
 import telebot
 from dotenv import load_dotenv
 
+# В database.py вы уже определили log_message,
+# поэтому не нужно ее переименовывать или менять ее сигнатуру.
 from database import get_connection, get_copies_by_original_id, log_message, init_db_if_not_exists
 from search import find_original
 from formatter import format_response, welcome_text
@@ -32,6 +34,7 @@ followup_sent = {}
 # --- Обработчики ---
 @bot.message_handler(commands=["start", "help"])
 def start(msg):
+    # Log: Статус "start_command"
     log_message(conn, msg.chat.id, msg.text, 'start_command')
     bot.reply_to(msg, welcome_text())
 
@@ -42,19 +45,36 @@ def handle_text(msg):
     last_user_ts[chat_id] = now
 
     result = find_original(conn, msg.text)
+    
+    # 1. Обработка неуспешного поиска (включая неполный запрос по бренду)
     if not result["ok"]:
+        # Log: Статус "fail", заметка - это сообщение об ошибке
         log_message(conn, msg.chat.id, msg.text, 'fail', result['message'])
         bot.reply_to(msg, result["message"])
         return
 
+    # 2. Обработка успешного поиска
     original = result["original"]
     copies = get_copies_by_original_id(conn, original["id"])
-    log_message(conn, msg.chat.id, msg.text, 'success', f"Found: {original['brand']} {original['name']}")
-    bot.reply_to(msg, format_response(original, copies), parse_mode='Markdown', disable_web_page_preview=True)
+    
+    # Сборка заметки для лога. Включаем 'note' из search.py, если он есть.
+    log_note = f"Found: {original['brand']} {original['name']}"
+    if 'note' in result:
+        log_note += f" | NOTE: {result['note']}" # Добавляем информацию о фаззи-совпадении
+        
+    log_message(conn, msg.chat.id, msg.text, 'success', log_note)
+    
+    # Формируем ответ, включая потенциальную заметку о неточном поиске
+    response_text = format_response(original, copies)
+    if 'note' in result:
+        # Добавляем предупреждение о неточном поиске перед результатом
+        response_text = f"**🤖 Внимание:** {result['note']} \n\n" + response_text 
+        
+    bot.reply_to(msg, response_text, parse_mode='Markdown', disable_web_page_preview=True)
 
     schedule_followup_once(bot, chat_id, now, last_user_ts, followup_sent)
 
-# --- Flask веб-сервер ---
+# --- Flask веб-сервер (без изменений) ---
 app = Flask(__name__)
 
 @app.route("/", methods=["GET"])
@@ -68,7 +88,7 @@ def webhook():
     bot.process_new_updates([update])
     return "", 200
 
-# --- Запуск ---
+# --- Запуск (без изменений) ---
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     bot.remove_webhook()
