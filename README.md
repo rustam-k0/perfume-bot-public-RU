@@ -75,8 +75,6 @@ perfume-bot/
 | `notes`          | TEXT       | Примечания к аромату            |
 | `saved_amount`   | REAL       | Экономия в %: `(orig_price_eur - dupe_price_eur) / orig_price_eur * 100` |
 
------
-
 ## 🚀 Запуск проекта
 
 1.  Установите зависимости:

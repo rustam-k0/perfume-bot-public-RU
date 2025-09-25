@@ -1,13 +1,14 @@
-# perfume-bot/web.py
+# perfume-bot/web.py (Улучшенная версия)
 import os
 import time
 from flask import Flask, request
 import telebot
 from dotenv import load_dotenv
-import traceback # Добавлено для лучшей отладки, хотя используется только type(e).__name__
+import traceback
 
 from database import get_connection, get_copies_by_original_id, log_message, init_db_if_not_exists
-from search import find_original
+# !!! Добавляем импорт init_catalog для явного вызова !!!
+from search import find_original, init_catalog 
 from formatter import format_response, welcome_text
 from followup import schedule_followup_once
 
@@ -25,8 +26,19 @@ if not WEBHOOK_URL:
 # --- Инициализация бота и базы данных ---
 bot = telebot.TeleBot(BOT_TOKEN)
 conn = get_connection(DB_PATH)
+
+# ГАРАНТИРУЕМ ИНИЦИАЛИЗАЦИЮ ТАБЛИЦ (ВКЛЮЧАЯ UserMessages)
 init_db_if_not_exists(conn)
 
+# ГАРАНТИРУЕМ ИНИЦИАЛИЗАЦИЮ КАТАЛОГА С ОБРАБОТКОЙ ОШИБОК
+try:
+    init_catalog(conn)
+    print("✅ Каталог парфюмов успешно загружен в память.")
+except Exception as e:
+    print(f"❌ Критическая ошибка при загрузке каталога: {e}")
+    # Не поднимаем ошибку, чтобы дать боту возможность работать (хотя бы логировать)
+    # При пустом каталоге все поисковые запросы будут 'fail'
+    
 last_user_ts = {}
 followup_sent = {}
 
@@ -55,13 +67,13 @@ def handle_text(msg):
             # Случай 1: Поиск не дал результатов (штатная неудача)
             log_notes = result['message']
             bot.reply_to(msg, result["message"])
-            return # Код перейдет в блок finally
+            return 
         
         # Поиск успешен. Начинается потенциально проблемный блок (DB/форматирование)
         original = result["original"]
-        copies = get_copies_by_original_id(conn, original["id"]) # Может вызвать ошибку
+        copies = get_copies_by_original_id(conn, original["id"]) 
         
-        response_text = format_response(original, copies) # Может вызвать ошибку
+        response_text = format_response(original, copies) 
         
         # Случай 2: Все успешно
         log_status = 'success'
@@ -72,10 +84,9 @@ def handle_text(msg):
         schedule_followup_once(bot, chat_id, now, last_user_ts, followup_sent)
 
     except Exception as e:
-        # Случай 3: Непредвиденная ошибка в логике (DB/форматирование)
+        # Случай 3: Непредвиденная ошибка
         log_notes = f"Critical handler error: {type(e).__name__}: {str(e)}"
         log_status = 'fail' 
-        # Отправляем сообщение пользователю о сбое
         bot.reply_to(msg, "Произошла критическая ошибка. Пожалуйста, попробуйте позже.")
         
     finally:
