@@ -4,6 +4,7 @@ import time
 from flask import Flask, request
 import telebot
 from dotenv import load_dotenv
+import traceback # Добавлено для лучшей отладки, хотя используется только type(e).__name__
 
 from database import get_connection, get_copies_by_original_id, log_message, init_db_if_not_exists
 from search import find_original
@@ -32,27 +33,54 @@ followup_sent = {}
 # --- Обработчики ---
 @bot.message_handler(commands=["start", "help"])
 def start(msg):
-    log_message(conn, msg.chat.id, msg.text, 'start_command')
+    # Логирование команды 'start'
+    log_message(conn, msg.chat.id, msg.text, 'start_command', "User started or requested help.")
     bot.reply_to(msg, welcome_text())
 
 @bot.message_handler(func=lambda m: True, content_types=["text"])
 def handle_text(msg):
     chat_id = msg.chat.id
+    query_text = msg.text
     now = time.time()
     last_user_ts[chat_id] = now
+    
+    # 1. Инициализация переменных для гарантированного логирования в блоке finally
+    log_status = 'fail'
+    log_notes = "Unknown error before processing started"
+    
+    try:
+        result = find_original(conn, query_text)
+        
+        if not result["ok"]:
+            # Случай 1: Поиск не дал результатов (штатная неудача)
+            log_notes = result['message']
+            bot.reply_to(msg, result["message"])
+            return # Код перейдет в блок finally
+        
+        # Поиск успешен. Начинается потенциально проблемный блок (DB/форматирование)
+        original = result["original"]
+        copies = get_copies_by_original_id(conn, original["id"]) # Может вызвать ошибку
+        
+        response_text = format_response(original, copies) # Может вызвать ошибку
+        
+        # Случай 2: Все успешно
+        log_status = 'success'
+        log_notes = f"Found: {original['brand']} {original['name']}"
+        
+        bot.reply_to(msg, response_text, parse_mode='Markdown', disable_web_page_preview=True)
 
-    result = find_original(conn, msg.text)
-    if not result["ok"]:
-        log_message(conn, msg.chat.id, msg.text, 'fail', result['message'])
-        bot.reply_to(msg, result["message"])
-        return
+        schedule_followup_once(bot, chat_id, now, last_user_ts, followup_sent)
 
-    original = result["original"]
-    copies = get_copies_by_original_id(conn, original["id"])
-    log_message(conn, msg.chat.id, msg.text, 'success', f"Found: {original['brand']} {original['name']}")
-    bot.reply_to(msg, format_response(original, copies), parse_mode='Markdown', disable_web_page_preview=True)
-
-    schedule_followup_once(bot, chat_id, now, last_user_ts, followup_sent)
+    except Exception as e:
+        # Случай 3: Непредвиденная ошибка в логике (DB/форматирование)
+        log_notes = f"Critical handler error: {type(e).__name__}: {str(e)}"
+        log_status = 'fail' 
+        # Отправляем сообщение пользователю о сбое
+        bot.reply_to(msg, "Произошла критическая ошибка. Пожалуйста, попробуйте позже.")
+        
+    finally:
+        # 4. ГАРАНТИРОВАННОЕ ЛОГИРОВАНИЕ: Выполняется в любом случае
+        log_message(conn, chat_id, query_text, log_status, log_notes)
 
 # --- Flask веб-сервер ---
 app = Flask(__name__)

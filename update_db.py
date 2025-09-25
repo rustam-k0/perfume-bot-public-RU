@@ -35,43 +35,57 @@ recommended_perfumes = [
     {'brand': 'Afnan', 'name': 'Supremacy in Oud'}
 ]
 
-def update_database_with_star():
-    """Обновляет базу данных, добавляя ⭐ к названиям рекомендованных парфюмов,
-       предварительно удаляя лишние звёзды."""
+def update_database_with_star_in_brand():
+    """
+    Обновляет базу данных:
+    1. Очищает все существующие звёзды из полей brand и name.
+    2. Добавляет ⭐ в начало поля 'brand' для рекомендованных ароматов.
+    """
+    DB_PATH = 'data/perfumes.db'
+    conn = None
     try:
-        conn = sqlite3.connect('data/perfumes.db')
+        conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
 
-        # Шаг 1: Удаляем все звёзды из названий
-        cursor.execute("UPDATE CopyPerfume SET name = REPLACE(name, '⭐ ', '')")
+        print("🔄 Шаг 1: Сброс. Удаление всех существующих звёзд '⭐ ' из полей brand и name...")
+        # Удаление звёзд из brand (на случай, если они там уже есть)
+        cursor.execute("UPDATE CopyPerfume SET brand = REPLACE(brand, '⭐ ', '') WHERE brand LIKE '⭐ %'")
+        # Удаление звёзд из name (на случай, если они там остались от прошлых запусков)
+        cursor.execute("UPDATE CopyPerfume SET name = REPLACE(name, '⭐ ', '') WHERE name LIKE '⭐ %'")
         conn.commit()
-        print("✅ Удалены все существующие звёзды из названий.")
+        print("✅ Сброс завершен.")
 
-        # Шаг 2: Добавляем одну звезду к нужным записям
+        print("\n✨ Шаг 2: Добавление '⭐ ' в начало поля brand для рекомендованных ароматов...")
         updated_count = 0
         for item in recommended_perfumes:
-            brand_to_update = item['brand']
+            brand_to_search = item['brand']
             name_to_search = item['name']
             
-            # Используем LIKE для поиска частичного совпадения в названии
+            # Находим записи, используя частичное совпадение по name и точное по brand
             cursor.execute(
-                "SELECT id, name FROM CopyPerfume WHERE brand = ? AND name LIKE ?",
-                (brand_to_update, f"%{name_to_search}%")
+                "SELECT id FROM CopyPerfume WHERE brand = ? AND name LIKE ?",
+                (brand_to_search, f"%{name_to_search}%")
             )
-            existing_record = cursor.fetchone()
+            records = cursor.fetchall()
 
-            if existing_record:
-                existing_name = existing_record[1]
-                # Проверяем, что звезды ещё нет, и добавляем её
-                if not existing_name.startswith('⭐ '):
-                    cursor.execute(
-                        "UPDATE CopyPerfume SET name = '⭐ ' || name WHERE brand = ? AND name LIKE ?",
-                        (brand_to_update, f"%{name_to_search}%")
-                    )
-                    updated_count += cursor.rowcount
-                    print(f"Обновлена запись: {brand_to_update} - {name_to_search}")
+            if records:
+                # Обновляем поле brand: добавляем '⭐ ' в начало
+                # Важно: используем LIKE, чтобы обновить все найденные записи
+                cursor.execute(
+                    "UPDATE CopyPerfume SET brand = '⭐ ' || brand WHERE brand = ? AND name LIKE ?",
+                    (brand_to_search, f"%{name_to_search}%")
+                )
+                
+                # Дополнительно убедимся, что в name нет звезды
+                cursor.execute(
+                    "UPDATE CopyPerfume SET name = REPLACE(name, '⭐ ', '') WHERE brand LIKE '⭐ ' || ? AND name LIKE ?",
+                    (brand_to_search, f"%{name_to_search}%")
+                )
+                
+                updated_count += cursor.rowcount
+                print(f"Обновлена запись: {brand_to_search} - {name_to_search}")
             else:
-                print(f"Запись не найдена, пропущено: {brand_to_update} - {name_to_search}")
+                print(f"Запись не найдена, пропущено: {brand_to_search} - {name_to_search}")
         
         conn.commit()
         print(f"\nОбновление завершено. Всего обновлено записей: {updated_count}")
@@ -83,4 +97,4 @@ def update_database_with_star():
             conn.close()
 
 if __name__ == '__main__':
-    update_database_with_star()
+    update_database_with_star_in_brand()
