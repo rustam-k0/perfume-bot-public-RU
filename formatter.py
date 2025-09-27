@@ -2,26 +2,27 @@
 # Форматирование текста ответов.
 
 import urllib.parse
+from i18n import get_message # <-- Import i18n
 
-def welcome_text():
-    return (
-        "Привет👋 \n\n"
-        "Я ищу доступные аналоги дорогого парфюма.\n\n"
-        "Отправьте сообщение в формате: БРЕНД + НАЗВАНИЕ.\n\n"
-        "Например: Dior Sauvage.\n\n"
-        "P.S.Иногда я могу растеряться. Пожалуйста, не сердитесь.🥺\n\n"
-    )
+def welcome_text(lang="ru"): # <-- Добавлен lang
+    # Используем локализованный приветственный текст
+    return get_message("welcome", lang)
 
 def create_search_link(brand, name):
     """
     Создает URL для поиска Google по заданным бренду и названию.
+    Текст запроса остается на русском, т.к. поиск "купить" в русской части Google
+    даст более релевантные результаты для большинства пользователей.
     """
     query = f"купить {brand} {name} онлайн"
     encoded_query = urllib.parse.quote_plus(query)
     return f"https://www.google.com/search?q={encoded_query}"
 
-def format_response(original, copies):
+def format_response(original, copies, lang="ru"): # <-- Добавлен lang
     lines = []
+    
+    # Получаем локализованный префикс для ссылки [купить]/[buy]
+    search_link_text = get_message("response_search_link_prefix", lang)
     
     # Форматируем оригинал
     original_link = create_search_link(original['brand'], original['name'])
@@ -29,13 +30,12 @@ def format_response(original, copies):
     original_brand = original['brand'] if original['brand'] else ''
     original_name = original['name'] if original['name'] else ''
     
-    lines.append(f"**{original_brand} {original_name}** [купить]({original_link})")
+    lines.append(f"**{original_brand} {original_name}** [{search_link_text}]({original_link})")
     lines.append("---------------------")
 
     if not copies:
-        lines.append("Мне не удалось найти этот аромат."
-                     "Скорее всего, я не знаком с ним или мне не хвататет данных для поиска.\n\n"
-                     "Может быть, попробуете написать бренд и название целиком? Или другой аромат?😣 \n\n")
+        # Локализованное сообщение "аналоги не найдены"
+        lines.append(get_message("response_not_found_copies", lang))
     else:
         for c in copies:
             brand = c["brand"] if c["brand"] else ""
@@ -44,14 +44,14 @@ def format_response(original, copies):
             
             # Условное форматирование для вывода названия и бренда
             if brand and name:
-                lines.append(f"▪️ {brand}: {name} [купить]({copy_link})")
+                lines.append(f"▪️ {brand}: {name} [{search_link_text}]({copy_link})")
             elif name:
-                lines.append(f"▪️ {name} [купить]({copy_link})")
+                lines.append(f"▪️ {name} [{search_link_text}]({copy_link})")
             elif brand:
-                lines.append(f"▪️ {brand} [купить]({copy_link})")
+                lines.append(f"▪️ {brand} [{search_link_text}]({copy_link})")
             
     lines.append("---------------------")
-    lines.append("Отлично!")
-    lines.append("Надеюсь, я правильно вас понял. Хотите попробовать ещё?")
+    # Локализованное завершающее сообщение
+    lines.append(get_message("response_close", lang))
     
     return "\n".join(lines)

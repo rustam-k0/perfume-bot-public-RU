@@ -6,6 +6,7 @@ from rapidfuzz import fuzz
 from rapidfuzz.fuzz import WRatio
 from utils import normalize_for_match
 from database import fetch_all_originals, fetch_clones_for_search, fetch_original_by_id
+from i18n import get_message # <-- Import i18n
 
 # Глобальные переменные каталога. Загружаются один раз при старте.
 CATALOG = None
@@ -85,7 +86,7 @@ def _fuzzy_search_best(user_norm, search_space, target_key, min_score=90):
     
     return {"ok": False, "result": None}
 
-def find_original_by_clone(conn, user_norm):
+def find_original_by_clone(conn, user_norm, lang="ru"): # <-- Добавлен lang
     """Ищет клон по нормализованному тексту и возвращает связанный с ним оригинал."""
     # Поиск клона в каталоге клонов
     # Минимальный скор снижен до 80, так как бренды клонов могут быть очень похожи
@@ -108,12 +109,13 @@ def find_original_by_clone(conn, user_norm):
             }
             return {"ok": True, "original": original_item}
     
-    return {"ok": False, "message": "Поиск по клонам не дал результата."}
+    # Локализованное сообщение об ошибке
+    return {"ok": False, "message": get_message("error_not_found", lang)}
 
 
 # --- Главная функция поиска ---
 
-def find_original(conn, user_text):
+def find_original(conn, user_text, lang="ru"): # <-- Добавлен lang
     """
     Главная функция поиска с многоступенчатой логикой:
     1. Проверка на пустой запрос.
@@ -126,7 +128,8 @@ def find_original(conn, user_text):
     global CATALOG, BRAND_MAP, NAME_MAP
 
     if not user_text or not user_text.strip():
-        return {"ok": False, "message": "Пустой запрос. Отправь в формате: 'Бренд Название'."}
+        # Локализованная ошибка
+        return {"ok": False, "message": get_message("error_empty_query", lang)}
 
     if not CATALOG:
         init_catalog(conn)
@@ -144,7 +147,7 @@ def find_original(conn, user_text):
     # ----------------------------------------------------
     # Шаг 2: Поиск по клонам (пользователь мог ввести клон)
     # ----------------------------------------------------
-    clone_search_result = find_original_by_clone(conn, user_norm)
+    clone_search_result = find_original_by_clone(conn, user_norm, lang) # <-- Передача lang
     if clone_search_result["ok"]:
         return clone_search_result
 
@@ -160,9 +163,11 @@ def find_original(conn, user_text):
     # B. Поиск по бренду (Brand Only) - min_score=90
     brand_match = _fuzzy_search_best(user_norm, CATALOG, "brand_norm", min_score=90)
     if brand_match["ok"]:
-        # Если найдено только по бренду, это может быть неточно. 
-        # Добавляем предупреждение, чтобы пользователь уточнил.
-        return {"ok": False, "message": f"Ой, кажется, вы не указали название парфюма полностью. Найден бренд **{brand_match['result']['brand']}**. Пожалуйста, введите данные целиком."}
+        # Локализованное предупреждение о неполном запросе по бренду
+        brand_name = brand_match['result']['brand']
+        # Используем .format для подстановки названия бренда
+        message = get_message("error_brand_only", lang).format(brand_name=brand_name)
+        return {"ok": False, "message": message}
 
     # ----------------------------------------------------
     # Шаг 4: Общий Фаззи-поиск (Display Norm) - min_score=85
@@ -170,10 +175,12 @@ def find_original(conn, user_text):
     # Снижаем порог для фаззи-поиска, чтобы поймать опечатки.
     match = _fuzzy_search_best(user_norm, CATALOG, "display_norm", min_score=85)
     if match["ok"]:
-        # Добавляем в ответ уведомление, что найдено неточно
-        return {"ok": True, "original": match["result"], "note": "Найдено по неточному совпадению. Проверьте результат."}
+        # Локализованная заметка о неточном совпадении
+        note = get_message("note_fuzzy_match", lang)
+        return {"ok": True, "original": match["result"], "note": note}
     
     # ----------------------------------------------------
     # Шаг 5: Неудача
     # ----------------------------------------------------
-    return {"ok": False, "message": "У меня не получилось найти то, что вы искали. Пожалуйста, попробуйте снова. 😅 Убедитесь, что вы указали бренд и название."}
+    # Локализованная ошибка "не найдено"
+    return {"ok": False, "message": get_message("error_not_found", lang)}
