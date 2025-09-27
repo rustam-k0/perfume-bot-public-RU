@@ -2,3 +2,4 @@ pyTelegramBotAPI
 python-dotenv
 rapidfuzz
 Flask
+psycopg2-binary

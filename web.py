@@ -16,9 +16,6 @@ from i18n import DEFAULT_LANG, get_message
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# ОПТИМИЗАЦИЯ: Использование абсолютного пути для DB_PATH
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.getenv("DB_PATH", os.path.join(BASE_DIR, "data", "perfumes.db"))
 
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
@@ -29,7 +26,7 @@ if not WEBHOOK_URL:
 
 # --- Инициализация бота, базы данных и хранилища языка ---
 bot = telebot.TeleBot(BOT_TOKEN)
-conn = get_connection(DB_PATH) 
+conn = get_connection() 
 init_db_if_not_exists(conn)
 
 last_user_ts = {}
