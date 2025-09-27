@@ -1,92 +1,95 @@
-Вы абсолютно правы. С новой структурой базы данных, которая включает логирование, ваш файл `README.md` должен быть обновлен, чтобы отразить эту важную часть проекта.
-
-Вот обновленная версия `README.md`.
-
------
-
 # Perfume Bot MVP
 
-Бот для поиска парфюмов и их популярных клонов с расчетом экономии.
+A Telegram bot designed to find perfumes and their popular dupes (clones), calculating the potential savings.
 
-**Ключевое обновление:** Добавлена система логирования всех сообщений пользователей для аналитики и улучшения качества поиска.
+---
 
-## 📂 Структура проекта
+## 📂 Project Structure
 
 ```
+
 perfume-bot/
 │
 ├── data/
 │   └── perfumes.db
 │
-├── web.py         # Запуск и обработчики Telegram, включая логирование запросов
-├── database.py    # Работа с SQLite и **инициализация всех таблиц** 👈
-├── search.py      # Логика парсинга и гибкого поиска (бренд/название, fuzzy)
-├── formatter.py   # Сборка красивого текста ответа
-├── followup.py    # Логика "Ура! 🎉..." (отправка 1 раз)
-├── utils.py       # Нормализация текста, транслитерация
+├── web.py         \# Bot startup and Telegram handlers, including request logging.
+├── database.py    \# SQLite handling and table initialization.
+├── search.py      \# Core logic for flexible/fuzzy searching (brand/name, fuzzy match).
+├── formatter.py   \# Assembles the formatted text response.
+├── followup.py    \# Logic for the "Wanna try again?" follow-up message.
+├── utils.py       \# Text normalization and Cyrillic transliteration.
+├── i18n.py        \# Centralized file for all localized strings 
 ├── requirements.txt
 ├── .env
 └── README.md
-```
 
------
+````
 
-## 🗄️ Структура базы данных (SQLite)
+---
 
-База данных теперь состоит из **трех** основных таблиц:
+## 🗄️ Database Structure (SQLite)
 
-### 1\. Таблица `UserMessages` (НОВАЯ)
+The database consists of **three** main tables:
 
-Хранит историю всех запросов пользователей для аналитики и поиска ошибок.
+### 1. `UserMessages` Table
 
-| Колонка      | Тип данных | Описание                      |
-|--------------|------------|-------------------------------|
-| `id`         | INTEGER    | Уникальный id (Primary Key)   |
-| `user_id`    | INTEGER    | ID пользователя Telegram      |
-| `timestamp`  | INTEGER    | Время отправки (Unix time)    |
-| `message`    | TEXT       | Текст сообщения пользователя  |
-| `status`     | TEXT       | Результат: `success`, `fail`, `start_command` |
-| `notes`      | TEXT       | Описание ошибки или найденного аромата|
+Stores the history of all user queries for analytics and error tracking.
 
-### 2\. Таблица `OriginalPerfume`
+| Column        | Data Type | Description 
 
-Хранит информацию об оригинальных парфюмах.
+| `id`          | INTEGER | Unique ID (Primary Key) 
+| `user_id`     | INTEGER | Telegram user ID 
+| `timestamp`   | INTEGER | UNIX timestamp of the message 
+| `message`     | TEXT    | User's raw text message 
+| `status`      | TEXT    | Query result status (e.g., `success`, `fail`, `start_command`) 
+| `notes`       | TEXT    | Additional notes (e.g., fuzzy match warning, error details) 
 
-| Колонка          | Тип данных | Описание  
-|------------------|------------|-----------------------------
-| `id`             | TEXT       | Уникальный id (Primary Key) |
-| `brand`          | TEXT       | Бренд оригинала             |
-| `name`           | TEXT       | Название оригинала          |
-| `price_eur`      | REAL       | Цена оригинала в евро       |
-| `url`            | TEXT       | Ссылка на страницу оригинала|
+### 2. `OriginalPerfume` Table
 
-### 3\. Таблица `CopyPerfume`
+Stores information about the original, expensive perfumes.
 
-Хранит информацию о копиях парфюмов, связанных с оригиналом.
+| Column      | Data Type      | Description             |
+| :---        | :---           | :---                    |
+| `id`        | TEXT           | Unique ID (Primary Key) |
+| `brand`     | TEXT           | Original perfume brand  |
+| `name`      | TEXT           | Original perfume name   |
+| `price_eur` | REAL           | Original price in Euros |
+| `url`       | TEXT           | Link to the original product page |
 
-| Колонка          | Тип данных | Описание  
-|------------------|------------|-----------
-| `id`             | TEXT       |Уникальный id (Primary Key)
-| `original_id`    | TEXT       | Ссылка на `id` из таблицы `OriginalPerfume` (Foreign Key) |
-| `brand`          | TEXT       | Бренд клона                     |
-| `name`           | TEXT       | Название клона                  |
-| `price_eur`      | REAL       | Цена клона в евро               |
-| `url`            | TEXT       | Ссылка на клон                  |
-| `notes`          | TEXT       | Примечания к аромату            |
-| `saved_amount`   | REAL       | Экономия в %: `(orig_price_eur - dupe_price_eur) / orig_price_eur * 100` |
+### 3. `CopyPerfume` Table
 
-## 🚀 Запуск проекта
+Stores information about perfume dupes (clones) linked to an original.
 
-1.  Установите зависимости:
+| Column         | Data Type | Description |
+| :---           | :--- | :--- |
+| `id`           | TEXT | Unique ID (Primary Key) |
+| `original_id`  | TEXT | Reference to `id` in `OriginalPerfume` (Foreign Key) |
+| `brand`        | TEXT | Dupe/clone brand |
+| `name`         | TEXT | Dupe/clone name |
+| `price_eur`    | REAL | Dupe/clone price in Euros |
+| `url`          | TEXT | Link to the dupe/clone product page |
+| `notes`        | TEXT | Notes about the dupe |
+| `saved_amount` | REAL | Savings percentage: `(orig_price_eur - dupe_price_eur) / orig_price_eur * 100` |
+
+---
+
+## 🚀 Project Setup
+
+1.  Install dependencies:
     ```bash
     pip install -r requirements.txt
     ```
-2.  Создайте файл `.env` в корневой директории и укажите токен и webhook URL:
+2.  Create a file named `.env` in the root directory and specify your bot token, webhook URL, and the desired language:
     ```
-    BOT_TOKEN="ВАШ_ТОКЕН_ЗДЕСЬ"
-    WEBHOOK_URL="ВАШ_WEBHOOK_URL_ДЛЯ_RENDER"
+    BOT_TOKEN="YOUR_TELEGRAM_BOT_TOKEN_HERE"
+    WEBHOOK_URL="YOUR_WEBHOOK_URL"
+    # Optional: Set the bot's default language (ru or en). Defaults to 'ru'.
+    BOT_LANG="en" 
     ```
-3.  **Первый запуск:** Запустите `web.py`. При первом запуске будет автоматически создана база данных `perfumes.db` со всеми тремя таблицами, включая `UserMessages`.
+3.  Run the bot (typically using a web server or hosting service like Heroku/Render):
     ```bash
     python web.py
     ```
+    *Note: The bot uses a Flask web server to handle Telegram webhooks.*
+````
